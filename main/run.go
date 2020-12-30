@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/xtls/xray-core/common/buf"
 	"github.com/xtls/xray-core/common/cmdarg"
 	"github.com/xtls/xray-core/common/platform"
 	"github.com/xtls/xray-core/core"
@@ -174,6 +175,21 @@ func startXray() (core.Server, error) {
 
 	if err != nil {
 		return nil, newError("failed to load config files: [", configFiles.String(), "]").Base(err)
+	}
+
+	v, t := false, false
+	for _, outbound := range config.Outbound {
+		s := strings.ToLower(outbound.ProxySettings.Type)
+		if s[11:16] == "vless" || s[11:16] == "vmess" {
+			v = true
+			continue
+		}
+		if s[11:17] == "trojan" || s[11:22] == "shadowsocks" {
+			t = true
+		}
+	}
+	if v && !t {
+		buf.Cone = false
 	}
 
 	server, err := core.New(config)
