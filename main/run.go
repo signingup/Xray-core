@@ -13,6 +13,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/golang/protobuf/proto"
+
+	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/common/buf"
 	"github.com/xtls/xray-core/common/cmdarg"
 	"github.com/xtls/xray-core/common/platform"
@@ -180,12 +183,17 @@ func startXray() (core.Server, error) {
 	v, t := false, false
 	for _, outbound := range config.Outbound {
 		s := strings.ToLower(outbound.ProxySettings.Type)
-		if s[11:16] == "vless" || s[11:16] == "vmess" {
+		l := len(s)
+		if l >= 16 && s[11:16] == "vless" || l >= 16 && s[11:16] == "vmess" {
 			v = true
 			continue
 		}
-		if s[11:17] == "trojan" || s[11:22] == "shadowsocks" {
-			t = true
+		if l >= 17 && s[11:17] == "trojan" || l >= 22 && s[11:22] == "shadowsocks" {
+			var m proxyman.SenderConfig
+			proto.Unmarshal(outbound.SenderSettings.Value, &m)
+			if m.MultiplexSettings == nil || !m.MultiplexSettings.Enabled {
+				t = true
+			}
 		}
 	}
 	if v && !t {
