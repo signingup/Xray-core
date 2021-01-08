@@ -274,23 +274,30 @@ func (s *Server) handleUDPPayload(ctx context.Context, clientReader *PacketReade
 			}
 
 			mb2, b := buf.SplitFirst(mb)
+			if b == nil {
+				continue
+			}
 			destination := *b.UDP
-			ctx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
-				From:   inbound.Source,
-				To:     destination,
-				Status: log.AccessAccepted,
-				Reason: "",
-				Email:  user.Email,
-			})
+
+			currentPacketCtx := ctx
+			if inbound.Source.IsValid() {
+				currentPacketCtx = log.ContextWithAccessMessage(ctx, &log.AccessMessage{
+					From:   inbound.Source,
+					To:     destination,
+					Status: log.AccessAccepted,
+					Reason: "",
+					Email:  user.Email,
+				})
+			}
 			newError("tunnelling request to ", destination).WriteToLog(session.ExportIDToError(ctx))
 
 			if !buf.Cone || dest == nil {
 				dest = &destination
 			}
 
-			udpServer.Dispatch(ctx, *dest, b) // first packet
+			udpServer.Dispatch(currentPacketCtx, *dest, b) // first packet
 			for _, payload := range mb2 {
-				udpServer.Dispatch(ctx, *dest, payload)
+				udpServer.Dispatch(currentPacketCtx, *dest, payload)
 			}
 		}
 	}
