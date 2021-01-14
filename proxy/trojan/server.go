@@ -47,6 +47,7 @@ type Server struct {
 	policyManager policy.Manager
 	validator     *Validator
 	fallbacks     map[string]map[string]*Fallback // or nil
+	cone          bool
 }
 
 // NewServer creates a new trojan inbound handler.
@@ -67,6 +68,7 @@ func NewServer(ctx context.Context, config *ServerConfig) (*Server, error) {
 	server := &Server{
 		policyManager: v.GetFeature(policy.ManagerType()).(policy.Manager),
 		validator:     validator,
+		cone:          ctx.Value("cone").(bool),
 	}
 
 	if config.Fallbacks != nil {
@@ -251,8 +253,13 @@ func (s *Server) Process(ctx context.Context, network net.Network, conn internet
 func (s *Server) handleUDPPayload(ctx context.Context, clientReader *PacketReader, clientWriter *PacketWriter, dispatcher routing.Dispatcher) error {
 	udpServer := udp.NewDispatcher(dispatcher, func(ctx context.Context, packet *udp_proto.Packet) {
 		udpPayload := packet.Payload
-		udpPayload.UDP = &packet.Source
-		common.Must(clientWriter.WriteMultiBuffer(buf.MultiBuffer{udpPayload}))
+		if udpPayload.UDP == nil {
+			udpPayload.UDP = &packet.Source
+		}
+
+		if err := clientWriter.WriteMultiBuffer(buf.MultiBuffer{udpPayload}); err != nil {
+			newError("failed to write response").Base(err).AtWarning().WriteToLog(session.ExportIDToError(ctx))
+		}
 	})
 
 	inbound := session.InboundFromContext(ctx)
@@ -291,7 +298,7 @@ func (s *Server) handleUDPPayload(ctx context.Context, clientReader *PacketReade
 			}
 			newError("tunnelling request to ", destination).WriteToLog(session.ExportIDToError(ctx))
 
-			if !buf.Cone || dest == nil {
+			if !s.cone || dest == nil {
 				dest = &destination
 			}
 
