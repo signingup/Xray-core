@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-
 	. "github.com/xtls/xray-core/app/dns"
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/features/dns"
 )
 
 func TestStaticHosts(t *testing.T) {
@@ -18,6 +18,20 @@ func TestStaticHosts(t *testing.T) {
 			Ip: [][]byte{
 				{1, 1, 1, 1},
 			},
+		},
+		{
+			Type:   DomainMatchingType_Full,
+			Domain: "proxy.xray.com",
+			Ip: [][]byte{
+				{1, 2, 3, 4},
+				{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+			},
+			ProxiedDomain: "another-proxy.xray.com",
+		},
+		{
+			Type:          DomainMatchingType_Full,
+			Domain:        "proxy2.xray.com",
+			ProxiedDomain: "proxy.xray.com",
 		},
 		{
 			Type:   DomainMatchingType_Subdomain,
@@ -31,6 +45,7 @@ func TestStaticHosts(t *testing.T) {
 			Domain: "baidu.com",
 			Ip: [][]byte{
 				{127, 0, 0, 1},
+				{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
 			},
 		},
 	}
@@ -39,7 +54,7 @@ func TestStaticHosts(t *testing.T) {
 	common.Must(err)
 
 	{
-		ips := hosts.LookupIP("example.com", IPOption{
+		ips := hosts.Lookup("example.com", dns.IPOption{
 			IPv4Enable: true,
 			IPv6Enable: true,
 		})
@@ -52,7 +67,33 @@ func TestStaticHosts(t *testing.T) {
 	}
 
 	{
-		ips := hosts.LookupIP("www.example.cn", IPOption{
+		domain := hosts.Lookup("proxy.xray.com", dns.IPOption{
+			IPv4Enable: true,
+			IPv6Enable: false,
+		})
+		if len(domain) != 1 {
+			t.Error("expect 1 domain, but got ", len(domain))
+		}
+		if diff := cmp.Diff(domain[0].Domain(), "another-proxy.xray.com"); diff != "" {
+			t.Error(diff)
+		}
+	}
+
+	{
+		domain := hosts.Lookup("proxy2.xray.com", dns.IPOption{
+			IPv4Enable: true,
+			IPv6Enable: false,
+		})
+		if len(domain) != 1 {
+			t.Error("expect 1 domain, but got ", len(domain))
+		}
+		if diff := cmp.Diff(domain[0].Domain(), "another-proxy.xray.com"); diff != "" {
+			t.Error(diff)
+		}
+	}
+
+	{
+		ips := hosts.Lookup("www.example.cn", dns.IPOption{
 			IPv4Enable: true,
 			IPv6Enable: true,
 		})
@@ -65,7 +106,7 @@ func TestStaticHosts(t *testing.T) {
 	}
 
 	{
-		ips := hosts.LookupIP("baidu.com", IPOption{
+		ips := hosts.Lookup("baidu.com", dns.IPOption{
 			IPv4Enable: false,
 			IPv6Enable: true,
 		})

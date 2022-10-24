@@ -9,6 +9,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/net"
+	dns_feature "github.com/xtls/xray-core/features/dns"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
@@ -48,20 +49,28 @@ func Test_parseResponse(t *testing.T) {
 		want    *IPRecord
 		wantErr bool
 	}{
-		{"empty",
+		{
+			"empty",
 			&IPRecord{0, []net.Address(nil), time.Time{}, dnsmessage.RCodeSuccess},
 			false,
 		},
-		{"error",
+		{
+			"error",
 			nil,
 			true,
 		},
-		{"a record",
-			&IPRecord{1, []net.Address{net.ParseAddress("8.8.8.8"), net.ParseAddress("8.8.4.4")},
-				time.Time{}, dnsmessage.RCodeSuccess},
+		{
+			"a record",
+			&IPRecord{
+				1,
+				[]net.Address{net.ParseAddress("8.8.8.8"), net.ParseAddress("8.8.4.4")},
+				time.Time{},
+				dnsmessage.RCodeSuccess,
+			},
 			false,
 		},
-		{"aaaa record",
+		{
+			"aaaa record",
 			&IPRecord{2, []net.Address{net.ParseAddress("2001::123:8888"), net.ParseAddress("2001::123:8844")}, time.Time{}, dnsmessage.RCodeSuccess},
 			false,
 		},
@@ -92,7 +101,7 @@ func Test_buildReqMsgs(t *testing.T) {
 	}
 	type args struct {
 		domain  string
-		option  IPOption
+		option  dns_feature.IPOption
 		reqOpts *dnsmessage.Resource
 	}
 	tests := []struct {
@@ -100,10 +109,26 @@ func Test_buildReqMsgs(t *testing.T) {
 		args args
 		want int
 	}{
-		{"dual stack", args{"test.com", IPOption{true, true}, nil}, 2},
-		{"ipv4 only", args{"test.com", IPOption{true, false}, nil}, 1},
-		{"ipv6 only", args{"test.com", IPOption{false, true}, nil}, 1},
-		{"none/error", args{"test.com", IPOption{false, false}, nil}, 0},
+		{"dual stack", args{"test.com", dns_feature.IPOption{
+			IPv4Enable: true,
+			IPv6Enable: true,
+			FakeEnable: false,
+		}, nil}, 2},
+		{"ipv4 only", args{"test.com", dns_feature.IPOption{
+			IPv4Enable: true,
+			IPv6Enable: false,
+			FakeEnable: false,
+		}, nil}, 1},
+		{"ipv6 only", args{"test.com", dns_feature.IPOption{
+			IPv4Enable: false,
+			IPv6Enable: true,
+			FakeEnable: false,
+		}, nil}, 1},
+		{"none/error", args{"test.com", dns_feature.IPOption{
+			IPv4Enable: false,
+			IPv6Enable: false,
+			FakeEnable: false,
+		}, nil}, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

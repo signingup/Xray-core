@@ -7,7 +7,6 @@ import (
 	"syscall"
 
 	"github.com/golang/protobuf/proto"
-
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
@@ -104,7 +103,7 @@ type TrojanUserConfig struct {
 // TrojanServerConfig is Inbound configuration
 type TrojanServerConfig struct {
 	Clients   []*TrojanUserConfig      `json:"clients"`
-	Fallback  json.RawMessage          `json:"fallback"`
+	Fallback  *TrojanInboundFallback   `json:"fallback"`
 	Fallbacks []*TrojanInboundFallback `json:"fallbacks"`
 }
 

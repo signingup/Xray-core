@@ -48,16 +48,41 @@ func applyOutboundSocketOptions(network string, address string, fd uintptr, conf
 	}
 
 	if isTCPSocket(network) {
-		switch config.Tfo {
-		case SocketConfig_Enable:
-			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_TCP, TCP_FASTOPEN_CONNECT, 1); err != nil {
-				return newError("failed to set TCP_FASTOPEN_CONNECT=1").Base(err)
-			}
-		case SocketConfig_Disable:
-			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_TCP, TCP_FASTOPEN_CONNECT, 0); err != nil {
-				return newError("failed to set TCP_FASTOPEN_CONNECT=0").Base(err)
+		tfo := config.ParseTFOValue()
+		if tfo > 0 {
+			tfo = 1
+		}
+		if tfo >= 0 {
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_TCP, TCP_FASTOPEN_CONNECT, tfo); err != nil {
+				return newError("failed to set TCP_FASTOPEN_CONNECT=", tfo).Base(err)
 			}
 		}
+
+		if config.TcpKeepAliveInterval > 0 || config.TcpKeepAliveIdle > 0 {
+			if config.TcpKeepAliveInterval > 0 {
+				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPINTVL, int(config.TcpKeepAliveInterval)); err != nil {
+					return newError("failed to set TCP_KEEPINTVL", err)
+				}
+			}
+			if config.TcpKeepAliveIdle > 0 {
+				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPIDLE, int(config.TcpKeepAliveIdle)); err != nil {
+					return newError("failed to set TCP_KEEPIDLE", err)
+				}
+			}
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1); err != nil {
+				return newError("failed to set SO_KEEPALIVE", err)
+			}
+		} else if config.TcpKeepAliveInterval < 0 || config.TcpKeepAliveIdle < 0 {
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 0); err != nil {
+				return newError("failed to unset SO_KEEPALIVE", err)
+			}
+		}
+
+                if config.TcpCongestion != "" {
+                        if err := syscall.SetsockoptString(int(fd), syscall.SOL_TCP, syscall.TCP_CONGESTION, config.TcpCongestion); err != nil {
+                                return newError("failed to set TCP_CONGESTION", err)
+                        }
+                }
 	}
 
 	if config.Tproxy.IsEnabled() {
@@ -76,16 +101,38 @@ func applyInboundSocketOptions(network string, fd uintptr, config *SocketConfig)
 		}
 	}
 	if isTCPSocket(network) {
-		switch config.Tfo {
-		case SocketConfig_Enable:
-			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_TCP, TCP_FASTOPEN, 1); err != nil {
-				return newError("failed to set TCP_FASTOPEN=1").Base(err)
-			}
-		case SocketConfig_Disable:
-			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_TCP, TCP_FASTOPEN, 0); err != nil {
-				return newError("failed to set TCP_FASTOPEN=0").Base(err)
+		tfo := config.ParseTFOValue()
+		if tfo >= 0 {
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_TCP, TCP_FASTOPEN, tfo); err != nil {
+				return newError("failed to set TCP_FASTOPEN=", tfo).Base(err)
 			}
 		}
+
+		if config.TcpKeepAliveInterval > 0 || config.TcpKeepAliveIdle > 0 {
+			if config.TcpKeepAliveInterval > 0 {
+				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPINTVL, int(config.TcpKeepAliveInterval)); err != nil {
+					return newError("failed to set TCP_KEEPINTVL", err)
+				}
+			}
+			if config.TcpKeepAliveIdle > 0 {
+				if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_KEEPIDLE, int(config.TcpKeepAliveIdle)); err != nil {
+					return newError("failed to set TCP_KEEPIDLE", err)
+				}
+			}
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 1); err != nil {
+				return newError("failed to set SO_KEEPALIVE", err)
+			}
+		} else if config.TcpKeepAliveInterval < 0 || config.TcpKeepAliveIdle < 0 {
+			if err := syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_KEEPALIVE, 0); err != nil {
+				return newError("failed to unset SO_KEEPALIVE", err)
+			}
+		}
+
+                if config.TcpCongestion != "" {
+                        if err := syscall.SetsockoptString(int(fd), syscall.SOL_TCP, syscall.TCP_CONGESTION, config.TcpCongestion); err != nil {
+                                return newError("failed to set TCP_CONGESTION", err)
+                        }
+                }
 	}
 
 	if config.Tproxy.IsEnabled() {

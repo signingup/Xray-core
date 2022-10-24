@@ -1,19 +1,24 @@
 package dns
 
 import (
+	"context"
 	"encoding/binary"
+	"strings"
 	"time"
 
 	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/log"
 	"github.com/xtls/xray-core/common/errors"
 	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/core"
 	dns_feature "github.com/xtls/xray-core/features/dns"
 	"golang.org/x/net/dns/dnsmessage"
 )
 
-// Fqdn normalize domain make sure it ends with '.'
+// Fqdn normalizes domain make sure it ends with '.'
 func Fqdn(domain string) string {
-	if len(domain) > 0 && domain[len(domain)-1] == '.' {
+	if len(domain) > 0 && strings.HasSuffix(domain, ".") {
 		return domain
 	}
 	return domain + "."
@@ -52,9 +57,7 @@ func isNewer(baseRec *IPRecord, newRec *IPRecord) bool {
 	return baseRec.Expire.Before(newRec.Expire)
 }
 
-var (
-	errRecordNotFound = errors.New("record not found")
-)
+var errRecordNotFound = errors.New("record not found")
 
 type dnsRequest struct {
 	reqType dnsmessage.Type
@@ -112,7 +115,7 @@ func genEDNS0Options(clientIP net.IP) *dnsmessage.Resource {
 	return opt
 }
 
-func buildReqMsgs(domain string, option IPOption, reqIDGen func() uint16, reqOpts *dnsmessage.Resource) []*dnsRequest {
+func buildReqMsgs(domain string, option dns_feature.IPOption, reqIDGen func() uint16, reqOpts *dnsmessage.Resource) []*dnsRequest {
 	qA := dnsmessage.Question{
 		Name:  dnsmessage.MustNewName(domain),
 		Type:  dnsmessage.TypeA,
@@ -163,7 +166,7 @@ func buildReqMsgs(domain string, option IPOption, reqIDGen func() uint16, reqOpt
 	return reqs
 }
 
-// parseResponse parse DNS answers from the returned payload
+// parseResponse parses DNS answers from the returned payload
 func parseResponse(payload []byte) (*IPRecord, error) {
 	var parser dnsmessage.Parser
 	h, err := parser.Start(payload)
@@ -211,7 +214,7 @@ L:
 		case dnsmessage.TypeAAAA:
 			ans, err := parser.AAAAResource()
 			if err != nil {
-				newError("failed to parse A record for domain: ", ah.Name).Base(err).WriteToLog()
+				newError("failed to parse AAAA record for domain: ", ah.Name).Base(err).WriteToLog()
 				break L
 			}
 			ipRecord.IP = append(ipRecord.IP, net.IPAddress(ans.AAAA[:]))
@@ -225,4 +228,20 @@ L:
 	}
 
 	return ipRecord, nil
+}
+
+// toDnsContext create a new background context with parent inbound, session and dns log
+func toDnsContext(ctx context.Context, addr string) context.Context {
+	dnsCtx := core.ToBackgroundDetachedContext(ctx)
+	if inbound := session.InboundFromContext(ctx); inbound != nil {
+		dnsCtx = session.ContextWithInbound(dnsCtx, inbound)
+	}
+	dnsCtx = session.ContextWithContent(dnsCtx, session.ContentFromContext(ctx))
+	dnsCtx = log.ContextWithAccessMessage(dnsCtx, &log.AccessMessage{
+		From:   "DNS",
+		To:     addr,
+		Status: log.AccessAccepted,
+		Reason: "",
+	})
+	return dnsCtx
 }

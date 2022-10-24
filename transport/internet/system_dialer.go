@@ -7,11 +7,11 @@ import (
 
 	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/features/dns"
+	"github.com/xtls/xray-core/features/outbound"
 )
 
-var (
-	effectiveSystemDialer SystemDialer = &DefaultSystemDialer{}
-)
+var effectiveSystemDialer SystemDialer = &DefaultSystemDialer{}
 
 type SystemDialer interface {
 	Dial(ctx context.Context, source net.Address, destination net.Destination, sockopt *SocketConfig) (net.Conn, error)
@@ -19,6 +19,8 @@ type SystemDialer interface {
 
 type DefaultSystemDialer struct {
 	controllers []controller
+	dns         dns.Client
+	obm         outbound.Manager
 }
 
 func resolveSrcAddr(network net.Network, src net.Address) net.Addr {
@@ -44,6 +46,8 @@ func hasBindAddr(sockopt *SocketConfig) bool {
 }
 
 func (d *DefaultSystemDialer) Dial(ctx context.Context, src net.Address, dest net.Destination, sockopt *SocketConfig) (net.Conn, error) {
+	newError("dialing to " + dest.String()).AtDebug().WriteToLog()
+
 	if dest.Network == net.Network_UDP && !hasBindAddr(sockopt) {
 		srcAddr := resolveSrcAddr(net.Network_UDP, src)
 		if srcAddr == nil {
@@ -61,15 +65,18 @@ func (d *DefaultSystemDialer) Dial(ctx context.Context, src net.Address, dest ne
 			return nil, err
 		}
 		return &PacketConnWrapper{
-			conn: packetConn,
-			dest: destAddr,
+			Conn: packetConn,
+			Dest: destAddr,
 		}, nil
 	}
-
+	goStdKeepAlive := time.Duration(0)
+	if sockopt != nil && sockopt.TcpKeepAliveIdle != 0 {
+		goStdKeepAlive = time.Duration(-1)
+	}
 	dialer := &net.Dialer{
 		Timeout:   time.Second * 16,
-		DualStack: true,
 		LocalAddr: resolveSrcAddr(dest.Network, src),
+		KeepAlive: goStdKeepAlive,
 	}
 
 	if sockopt != nil || len(d.controllers) > 0 {
@@ -99,49 +106,49 @@ func (d *DefaultSystemDialer) Dial(ctx context.Context, src net.Address, dest ne
 }
 
 type PacketConnWrapper struct {
-	conn net.PacketConn
-	dest net.Addr
+	Conn net.PacketConn
+	Dest net.Addr
 }
 
 func (c *PacketConnWrapper) Close() error {
-	return c.conn.Close()
+	return c.Conn.Close()
 }
 
 func (c *PacketConnWrapper) LocalAddr() net.Addr {
-	return c.conn.LocalAddr()
+	return c.Conn.LocalAddr()
 }
 
 func (c *PacketConnWrapper) RemoteAddr() net.Addr {
-	return c.dest
+	return c.Dest
 }
 
 func (c *PacketConnWrapper) Write(p []byte) (int, error) {
-	return c.conn.WriteTo(p, c.dest)
+	return c.Conn.WriteTo(p, c.Dest)
 }
 
 func (c *PacketConnWrapper) Read(p []byte) (int, error) {
-	n, _, err := c.conn.ReadFrom(p)
+	n, _, err := c.Conn.ReadFrom(p)
 	return n, err
 }
 
 func (c *PacketConnWrapper) WriteTo(p []byte, d net.Addr) (int, error) {
-	return c.conn.WriteTo(p, d)
+	return c.Conn.WriteTo(p, d)
 }
 
 func (c *PacketConnWrapper) ReadFrom(p []byte) (int, net.Addr, error) {
-	return c.conn.ReadFrom(p)
+	return c.Conn.ReadFrom(p)
 }
 
 func (c *PacketConnWrapper) SetDeadline(t time.Time) error {
-	return c.conn.SetDeadline(t)
+	return c.Conn.SetDeadline(t)
 }
 
 func (c *PacketConnWrapper) SetReadDeadline(t time.Time) error {
-	return c.conn.SetReadDeadline(t)
+	return c.Conn.SetReadDeadline(t)
 }
 
 func (c *PacketConnWrapper) SetWriteDeadline(t time.Time) error {
-	return c.conn.SetWriteDeadline(t)
+	return c.Conn.SetWriteDeadline(t)
 }
 
 type SystemDialerAdapter interface {
@@ -168,7 +175,7 @@ func (v *SimpleSystemDialer) Dial(ctx context.Context, src net.Address, dest net
 // xray:api:stable
 func UseAlternativeSystemDialer(dialer SystemDialer) {
 	if dialer == nil {
-		effectiveSystemDialer = &DefaultSystemDialer{}
+		dialer = &DefaultSystemDialer{}
 	}
 	effectiveSystemDialer = dialer
 }
